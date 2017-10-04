@@ -1,0 +1,7 @@
+/vendor
+/cmd/cjdnsui/deploy
+moc.cpp
+moc.go
+moc.h
+moc_cgo_*.go
+moc_moc.h
