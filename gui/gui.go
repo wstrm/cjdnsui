@@ -17,8 +17,13 @@
 package gui
 
 import (
-	"errors"
+	"bufio"
+	"fmt"
+	"io"
 	"os"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/therecipe/qt/core"
 	"github.com/therecipe/qt/widgets"
@@ -26,28 +31,45 @@ import (
 )
 
 const (
-	statusTopic = iota
+	settingsSaveTopic = iota
 )
 
-type statusData struct {
-	cjdnsIp   string
-	publicKey string
-	port      int
+type Status struct {
+	CjdnsIp   string
+	PublicKey string
+	Port      int
+}
+
+type Settings struct {
+	AuthorizedPasswords []string
+	AdminAddress        string
+	AdminPassword       string
 }
 
 //go:generate qtmoc
 type statusWidget struct {
 	widgets.QWidget
 
-	_ func(data statusData) error `slot:"statusUpdate"`
+	_ func(status Status) error `slot:"set"`
+	_ func() Status             `slot:"get"`
+}
+
+type settingsWidget struct {
+	widgets.QWidget
+
+	_ func()                        `signal:"save"`
+	_ func(settings Settings) error `slot:"set"`
+	_ func() Settings               `slot:"get"`
 }
 
 func newStatusWidget() *statusWidget {
 	widget := NewStatusWidget(nil, 0)
-	mainHBox := widgets.NewQHBoxLayout2(widget)
+
+	mainVBox := widgets.NewQVBoxLayout2(widget)
 
 	localInfoGroup := widgets.NewQGroupBox2("Peering information", nil)
-	mainHBox.AddWidget(localInfoGroup, 0, core.Qt__AlignLeft)
+
+	mainVBox.AddWidget(localInfoGroup, 0, core.Qt__AlignLeft)
 
 	localInfoGrid := widgets.NewQGridLayout2()
 	localInfoGroup.SetLayout(localInfoGrid)
@@ -64,12 +86,109 @@ func newStatusWidget() *statusWidget {
 	localInfoGrid.AddWidget(publicKeyLabel, 1, 1, core.Qt__AlignLeft)
 	localInfoGrid.AddWidget(portLabel, 2, 1, core.Qt__AlignLeft)
 
-	widget.ConnectStatusUpdate(func(data statusData) error {
-		cjdnsIpLabel.SetText(data.cjdnsIp)
-		publicKeyLabel.SetText(data.publicKey)
-		portLabel.SetText(string(data.port))
+	widget.ConnectSet(func(status Status) error {
+		cjdnsIpLabel.SetText(status.CjdnsIp)
+		publicKeyLabel.SetText(status.PublicKey)
+		portLabel.SetText(string(status.Port))
 
 		return nil
+	})
+
+	widget.ConnectGet(func() Status {
+		port, err := strconv.Atoi(portLabel.Text())
+		if err != nil {
+			panic(err)
+		}
+
+		return Status{
+			CjdnsIp:   cjdnsIpLabel.Text(),
+			PublicKey: publicKeyLabel.Text(),
+			Port:      port,
+		}
+	})
+
+	return widget
+}
+
+func newSettingsWidget() *settingsWidget {
+	widget := NewSettingsWidget(nil, 0)
+
+	mainVBox := widgets.NewQVBoxLayout2(widget)
+
+	adminLoginGroup := widgets.NewQGroupBox2("Administration login", nil)
+	authPasswordGroup := widgets.NewQGroupBox2("Authorized passwords", nil)
+
+	mainVBox.AddWidget(adminLoginGroup, 0, core.Qt__AlignLeft)
+	mainVBox.AddWidget(authPasswordGroup, 0, core.Qt__AlignLeft)
+
+	adminLoginVBox := widgets.NewQVBoxLayout()
+	adminLoginGroup.SetLayout(adminLoginVBox)
+
+	adminAddressInput := widgets.NewQInputDialog(nil, 0)
+	adminAddressInput.SetLabelText("Address:")
+	adminPasswordInput := widgets.NewQInputDialog(nil, 0)
+	adminPasswordInput.SetLabelText("Password:")
+
+	adminLoginVBox.AddWidget(adminAddressInput, 1, core.Qt__AlignLeft)
+	adminLoginVBox.AddWidget(adminPasswordInput, 1, core.Qt__AlignLeft)
+
+	authPasswordVBox := widgets.NewQVBoxLayout()
+	authPasswordGroup.SetLayout(authPasswordVBox)
+
+	authPasswordTextEdit := widgets.NewQPlainTextEdit(nil)
+	authPasswordTextEdit.SetPlaceholderText("Authorized passwords")
+	authPasswordTextEdit.SetLineWrapMode(widgets.QPlainTextEdit__NoWrap)
+	authPasswordVBox.AddWidget(authPasswordTextEdit, 1, core.Qt__AlignLeft)
+
+	saveButton := widgets.NewQPushButton2("Save", nil)
+	mainVBox.AddWidget(saveButton, 1, core.Qt__AlignLeft)
+
+	saveButton.ConnectClick(func() {
+		widget.Save()
+	})
+
+	widget.ConnectSet(func(settings Settings) error {
+		adminAddressInput.SetTextValue(settings.AdminAddress)
+		adminPasswordInput.SetTextValue(settings.AdminPassword)
+
+		authPasswordTextEdit.Clear()
+		for _, password := range settings.AuthorizedPasswords {
+			authPasswordTextEdit.AppendPlainText(fmt.Sprintf("%s\n", password))
+		}
+
+		return nil
+	})
+
+	widget.ConnectGet(func() Settings {
+		buff := bufio.NewReader(strings.NewReader(authPasswordTextEdit.ToPlainText()))
+
+		var authPasswords []string
+		for {
+			line, _, err := buff.ReadLine()
+			if err == nil {
+				password := strings.Map(func(r rune) rune {
+					if unicode.IsSpace(r) {
+						return -1
+					}
+					return r
+				}, string(line))
+
+				if len(password) > 0 {
+					authPasswords = append(authPasswords, password)
+				}
+
+			} else if err == io.EOF {
+				break
+			} else {
+				panic(err)
+			}
+		}
+
+		return Settings{
+			AdminAddress:        adminAddressInput.TextValue(),
+			AdminPassword:       adminPasswordInput.TextValue(),
+			AuthorizedPasswords: authPasswords,
+		}
 	})
 
 	return widget
@@ -77,6 +196,17 @@ func newStatusWidget() *statusWidget {
 
 type View struct {
 	patterns.Observable
+
+	status   *statusWidget
+	settings *settingsWidget
+}
+
+func (view *View) SetStatus(status Status) {
+	view.status.Set(status)
+}
+
+func (view *View) GetStatus() Status {
+	return view.status.Get()
 }
 
 func (view *View) Run() {
@@ -85,15 +215,14 @@ func (view *View) Run() {
 	tabWidget := widgets.NewQTabWidget(nil)
 
 	statusWidget := newStatusWidget()
-	view.AddObserver(statusTopic, func(d interface{}) error {
-		data, ok := d.(statusData)
-		if !ok {
-			return errors.New("cannot cast data to status data type")
-		}
-		return statusWidget.StatusUpdate(data)
-	})
+	settingsWidget := newSettingsWidget()
 
 	tabWidget.AddTab(statusWidget, "Status")
+	tabWidget.AddTab(settingsWidget, "Settings")
+
+	settingsWidget.ConnectSave(func() {
+		view.NotifyObservers(settingsSaveTopic, nil)
+	})
 
 	tabWidget.Show()
 
