@@ -1,8 +1,7 @@
 // cjdnsui - Graphical user interface for Cjdns
 // Copyright (C) 2017  William Wennerström
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
+// This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
@@ -26,6 +25,7 @@ import (
 	"unicode"
 
 	"github.com/therecipe/qt/core"
+	"github.com/therecipe/qt/gui"
 	"github.com/therecipe/qt/widgets"
 	"github.com/willeponken/cjdnsui/patterns"
 )
@@ -62,29 +62,40 @@ type settingsWidget struct {
 	_ func() Settings               `slot:"get"`
 }
 
+func newSelectableQLabel(label string) *widgets.QLabel {
+	widget := widgets.NewQLabel2(label, nil, 0)
+	widget.SetTextInteractionFlags(core.Qt__TextSelectableByMouse)
+	widget.SetCursor(gui.NewQCursor2(core.Qt__IBeamCursor))
+	return widget
+}
+
 func newStatusWidget() *statusWidget {
 	widget := NewStatusWidget(nil, 0)
 
 	mainVBox := widgets.NewQVBoxLayout2(widget)
 
-	localInfoGroup := widgets.NewQGroupBox2("Peering information", nil)
+	localInfoGroup := widgets.NewQGroupBox2("Local node", nil)
+	localInfoGroup.SetSizePolicy2(widgets.QSizePolicy__Minimum, widgets.QSizePolicy__Minimum)
+	localInfoGroup.SetMinimumWidth(500)
 
 	mainVBox.AddWidget(localInfoGroup, 0, core.Qt__AlignLeft)
 
-	localInfoGrid := widgets.NewQGridLayout2()
-	localInfoGroup.SetLayout(localInfoGrid)
+	localInfoForm := widgets.NewQFormLayout(nil)
+	localInfoGroup.SetLayout(localInfoForm)
 
-	localInfoGrid.AddWidget(widgets.NewQLabel2("Cjdns IP:", nil, 0), 0, 0, core.Qt__AlignLeft)
-	localInfoGrid.AddWidget(widgets.NewQLabel2("Public Key:", nil, 0), 1, 0, core.Qt__AlignLeft)
-	localInfoGrid.AddWidget(widgets.NewQLabel2("Port:", nil, 0), 2, 0, core.Qt__AlignLeft)
+	cjdnsIpLabel := newSelectableQLabel("Unknown")
+	publicKeyLabel := newSelectableQLabel("Unknown")
+	portLabel := newSelectableQLabel("Unknown")
 
-	cjdnsIpLabel := widgets.NewQLabel2("Unknown", nil, 0)
-	publicKeyLabel := widgets.NewQLabel2("Unknown", nil, 0)
-	portLabel := widgets.NewQLabel2("Unknown", nil, 0)
+	localInfoForm.AddRow3("Cjdns IP:", cjdnsIpLabel)
+	localInfoForm.AddRow3("Public Key:", publicKeyLabel)
+	localInfoForm.AddRow3("Port:", portLabel)
 
-	localInfoGrid.AddWidget(cjdnsIpLabel, 0, 1, core.Qt__AlignLeft)
-	localInfoGrid.AddWidget(publicKeyLabel, 1, 1, core.Qt__AlignLeft)
-	localInfoGrid.AddWidget(portLabel, 2, 1, core.Qt__AlignLeft)
+	currentPeersGroup := widgets.NewQGroupBox2("Current peers", nil)
+	currentPeersGroup.SetSizePolicy2(widgets.QSizePolicy__Minimum, widgets.QSizePolicy__Expanding)
+	currentPeersGroup.SetMinimumWidth(500)
+
+	mainVBox.AddWidget(currentPeersGroup, 0, core.Qt__AlignLeft)
 
 	widget.ConnectSet(func(status Status) error {
 		cjdnsIpLabel.SetText(status.CjdnsIp)
@@ -116,40 +127,47 @@ func newSettingsWidget() *settingsWidget {
 	mainVBox := widgets.NewQVBoxLayout2(widget)
 
 	adminLoginGroup := widgets.NewQGroupBox2("Administration login", nil)
+	adminLoginGroup.SetSizePolicy2(widgets.QSizePolicy__Minimum, widgets.QSizePolicy__Minimum)
+	adminLoginGroup.SetMinimumWidth(500)
 	authPasswordGroup := widgets.NewQGroupBox2("Authorized passwords", nil)
+	authPasswordGroup.SetSizePolicy2(widgets.QSizePolicy__Maximum, widgets.QSizePolicy__Expanding)
+	authPasswordGroup.SetMinimumWidth(500)
 
 	mainVBox.AddWidget(adminLoginGroup, 0, core.Qt__AlignLeft)
-	mainVBox.AddWidget(authPasswordGroup, 0, core.Qt__AlignLeft)
+	mainVBox.AddWidget(authPasswordGroup, 1, core.Qt__AlignLeft)
 
-	adminLoginVBox := widgets.NewQVBoxLayout()
-	adminLoginGroup.SetLayout(adminLoginVBox)
+	adminLoginForm := widgets.NewQFormLayout(nil)
+	adminLoginGroup.SetLayout(adminLoginForm)
 
-	adminAddressInput := widgets.NewQInputDialog(nil, 0)
-	adminAddressInput.SetLabelText("Address:")
-	adminPasswordInput := widgets.NewQInputDialog(nil, 0)
-	adminPasswordInput.SetLabelText("Password:")
+	adminAddressInput := widgets.NewQLineEdit(nil)
+	adminAddressInput.SetMinimumWidth(200)
+	adminPasswordInput := widgets.NewQLineEdit(nil)
+	adminPasswordInput.SetEchoMode(widgets.QLineEdit__Password)
+	adminPasswordInput.SetMinimumWidth(200)
 
-	adminLoginVBox.AddWidget(adminAddressInput, 1, core.Qt__AlignLeft)
-	adminLoginVBox.AddWidget(adminPasswordInput, 1, core.Qt__AlignLeft)
+	adminLoginForm.AddRow3("Address:", adminAddressInput)
+	adminLoginForm.AddRow3("Password:", adminPasswordInput)
 
-	authPasswordVBox := widgets.NewQVBoxLayout()
-	authPasswordGroup.SetLayout(authPasswordVBox)
+	authPasswordForm := widgets.NewQFormLayout(nil)
+	authPasswordGroup.SetLayout(authPasswordForm)
 
 	authPasswordTextEdit := widgets.NewQPlainTextEdit(nil)
+	authPasswordTextEdit.SetSizePolicy2(widgets.QSizePolicy__Expanding, widgets.QSizePolicy__Expanding)
 	authPasswordTextEdit.SetPlaceholderText("Authorized passwords")
 	authPasswordTextEdit.SetLineWrapMode(widgets.QPlainTextEdit__NoWrap)
-	authPasswordVBox.AddWidget(authPasswordTextEdit, 1, core.Qt__AlignLeft)
+	authPasswordTextEdit.SetMinimumSize2(300, 200)
+	authPasswordForm.AddWidget(authPasswordTextEdit)
 
 	saveButton := widgets.NewQPushButton2("Save", nil)
-	mainVBox.AddWidget(saveButton, 1, core.Qt__AlignLeft)
+	mainVBox.AddWidget(saveButton, 0, core.Qt__AlignRight)
 
-	saveButton.ConnectClick(func() {
+	saveButton.ConnectReleased(func() {
 		widget.Save()
 	})
 
 	widget.ConnectSet(func(settings Settings) error {
-		adminAddressInput.SetTextValue(settings.AdminAddress)
-		adminPasswordInput.SetTextValue(settings.AdminPassword)
+		adminAddressInput.SetText(settings.AdminAddress)
+		adminPasswordInput.SetText(settings.AdminPassword)
 
 		authPasswordTextEdit.Clear()
 		for _, password := range settings.AuthorizedPasswords {
@@ -185,8 +203,8 @@ func newSettingsWidget() *settingsWidget {
 		}
 
 		return Settings{
-			AdminAddress:        adminAddressInput.TextValue(),
-			AdminPassword:       adminPasswordInput.TextValue(),
+			AdminAddress:        adminAddressInput.Text(),
+			AdminPassword:       adminPasswordInput.Text(),
 			AuthorizedPasswords: authPasswords,
 		}
 	})
@@ -207,6 +225,14 @@ func (view *View) SetStatus(status Status) {
 
 func (view *View) GetStatus() Status {
 	return view.status.Get()
+}
+
+func (view *View) SetSettings(settings Settings) {
+	view.settings.Set(settings)
+}
+
+func (view *View) GetSettings() Settings {
+	return view.settings.Get()
 }
 
 func (view *View) Run() {
