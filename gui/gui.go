@@ -95,7 +95,16 @@ func newStatusWidget() *statusWidget {
 	currentPeersGroup.SetSizePolicy2(widgets.QSizePolicy__Minimum, widgets.QSizePolicy__Expanding)
 	currentPeersGroup.SetMinimumWidth(500)
 
+	currentPeersForm := widgets.NewQFormLayout(nil)
+	currentPeersGroup.SetLayout(currentPeersForm)
+
 	mainVBox.AddWidget(currentPeersGroup, 0, core.Qt__AlignLeft)
+
+	currentPeersTable := widgets.NewQTableWidget2(0, 6, nil)
+	currentPeersTable.SetHorizontalHeaderLabels([]string{"Name", "IPv6", "Status", "Version", "Rx/Tx", "Latency"})
+	currentPeersForm.AddWidget(currentPeersTable)
+
+	currentPeersTable.InsertRow(0)
 
 	widget.ConnectSet(func(status Status) error {
 		cjdnsIpLabel.SetText(status.CjdnsIp)
